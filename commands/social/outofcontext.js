@@ -3,6 +3,9 @@ const { Sequelize } = require('sequelize');
 const sequelize = require('../../db.js');
 const OutOfContext = require('../../models/OutOfContext')(sequelize, Sequelize.DataTypes);
 
+// Discord message link regex
+const MESSAGE_LINK_REGEX = /https:\/\/(?:ptb\.|canary\.)?discord(?:app)?\.com\/channels\/(\d+)\/(\d+)\/(\d+)/;
+
 module.exports = {
 	data: new SlashCommandBuilder()
 		.setName('outofcontext')
@@ -11,16 +14,10 @@ module.exports = {
 			subcommand
 				.setName('add')
 				.setDescription('Add a new out-of-context quote')
-				.addUserOption(option =>
-					option
-						.setName('user')
-						.setDescription('Who said this masterpiece?')
-						.setRequired(true)
-				)
 				.addStringOption(option =>
 					option
-						.setName('quote')
-						.setDescription('The quote (no context allowed)')
+						.setName('message_link')
+						.setDescription('Discord message link (right-click message > Copy Message Link)')
 						.setRequired(true)
 				)
 		)
@@ -67,30 +64,80 @@ module.exports = {
 		const subcommand = interaction.options.getSubcommand();
 
 		if (subcommand === 'add') {
-			const quotedUser = interaction.options.getUser('user');
-			const quote = interaction.options.getString('quote');
+			const messageLink = interaction.options.getString('message_link');
 
-			// Don't let people quote themselves
-			if (quotedUser.id === interaction.user.id) {
+			// Validate message link format
+			const match = messageLink.match(MESSAGE_LINK_REGEX);
+			if (!match) {
 				return interaction.reply({
-					content: "You can't quote yourself, that's just sad. 😬",
+					content: "That doesn't look like a valid Discord message link. Right-click a message and select 'Copy Message Link'. 🔗",
 					ephemeral: true,
 				});
 			}
 
-			// Don't quote bots
-			if (quotedUser.bot) {
+			const [, guildId, channelId, messageId] = match;
+
+			// Check if link is from this server
+			if (guildId !== interaction.guildId) {
 				return interaction.reply({
-					content: "Quoting bots? Really? Touch grass. 🌿",
+					content: "That message is from a different server. Keep the quotes local! 🏠",
 					ephemeral: true,
 				});
 			}
+
+			await interaction.deferReply();
 
 			try {
+				// Fetch the channel and message
+				const channel = await interaction.client.channels.fetch(channelId);
+				if (!channel) {
+					return interaction.editReply({
+						content: "Couldn't find that channel. Maybe it was deleted? 👻",
+					});
+				}
+
+				const message = await channel.messages.fetch(messageId);
+				if (!message) {
+					return interaction.editReply({
+						content: "Couldn't find that message. It may have been deleted. 💨",
+					});
+				}
+
+				// Don't let people quote themselves
+				if (message.author.id === interaction.user.id) {
+					return interaction.editReply({
+						content: "You can't quote yourself, that's just sad. 😬",
+					});
+				}
+
+				// Don't quote bots
+				if (message.author.bot) {
+					return interaction.editReply({
+						content: "Quoting bots? Really? Touch grass. 🌿",
+					});
+				}
+
+				// Get message content
+				let quote = message.content;
+				if (!quote && message.attachments.size > 0) {
+					quote = '[Attachment]';
+				}
+				if (!quote && message.embeds.length > 0) {
+					quote = '[Embed]';
+				}
+				if (!quote) {
+					quote = '[No text content]';
+				}
+
+				// Truncate if too long
+				if (quote.length > 500) {
+					quote = quote.substring(0, 497) + '...';
+				}
+
 				const newQuote = await OutOfContext.create({
 					quote: quote,
-					quotedUserId: quotedUser.id,
-					quotedUsername: quotedUser.username,
+					quotedUserId: message.author.id,
+					quotedUsername: message.author.username,
 					addedByUserId: interaction.user.id,
 					addedByUsername: interaction.user.username,
 					guildId: interaction.guildId,
@@ -101,14 +148,15 @@ module.exports = {
 					.setTitle('📝 Quote Added!')
 					.setDescription(`"${quote}"`)
 					.addFields(
-						{ name: 'Said by', value: `${quotedUser}`, inline: true },
+						{ name: 'Said by', value: `<@${message.author.id}>`, inline: true },
 						{ name: 'Added by', value: `${interaction.user}`, inline: true },
-						{ name: 'Quote ID', value: `#${newQuote.id}`, inline: true }
+						{ name: 'Quote ID', value: `#${newQuote.id}`, inline: true },
+						{ name: 'Message Link', value: `[Jump to message](${messageLink})`, inline: true }
 					)
 					.setFooter({ text: 'No context allowed 🤫 • This message will self-destruct in 5 minutes' })
 					.setTimestamp();
 
-				const reply = await interaction.reply({ embeds: [embed], fetchReply: true });
+				const reply = await interaction.editReply({ embeds: [embed], fetchReply: true });
 
 				// Delete after 5 minutes
 				setTimeout(() => {
@@ -116,9 +164,8 @@ module.exports = {
 				}, 5 * 60 * 1000);
 			} catch (error) {
 				console.error('Error adding quote:', error);
-				await interaction.reply({
+				await interaction.editReply({
 					content: 'Something broke while saving that quote. Probably your fault. 🙄',
-					ephemeral: true,
 				});
 			}
 		}

@@ -377,16 +377,13 @@ function formatMemoryForPrompt(userId) {
   }
   
   if (memory.insideJokes.length > 0) {
-    context += `\nInside jokes we share:\n`;
+    context += `\nInside jokes we share (reference ONE of these naturally if it fits, do not force it):\n`;
     memory.insideJokes.forEach(joke => {
       const jokeText = typeof joke === 'string' ? joke : joke.text;
       context += `- ${jokeText}\n`;
-      
-      // Update lastReferenced when included in prompt
-      if (typeof joke === 'object') {
-        joke.lastReferenced = new Date().toISOString();
-      }
     });
+    // Delete all inside jokes after including them once - they're single-use
+    memory.insideJokes = [];
   }
   
   if (memory.roastScore !== 0) {

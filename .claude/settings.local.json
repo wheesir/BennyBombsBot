@@ -6,7 +6,10 @@
       "Bash(git mv:*)",
       "Bash(while IFS= read -r f)",
       "Bash(do sed -i \"s|require\\(''\\\\.\\\\./|require\\(''../../|g\" \"$f\")",
-      "Bash(done)"
+      "Bash(done)",
+      "Bash(node -e:*)",
+      "Bash(node:*)",
+      "Bash(python -c:*)"
     ]
   }
 }

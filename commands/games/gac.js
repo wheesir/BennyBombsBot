@@ -100,8 +100,22 @@ module.exports = {
     });
     
     // Check if current time is between 12pm and 4pm (skip in test mode)
-    if (!isTestMode && (currentHour < 12 || currentHour >= 16)) {
+    if (!isTestMode && currentHour < 12) {
       return interaction.reply("GAC can only be used between 12pm and 4pm! Lucas doesn't make excuses outside of afternoon hours. ⏰");
+    }
+
+    if (!isTestMode && currentHour >= 16) {
+      // Check if Lucas already made an excuse today
+      const existingExcuse = await GACMessage.findOne({
+        where: { date: todayString }
+      });
+
+      if (existingExcuse) {
+        const existingCreatedAt = existingExcuse.createdAt.toLocaleString();
+        return interaction.reply(`Lucas already made his excuse for today at ${existingCreatedAt}`);
+      }
+
+      return interaction.reply("Bro it's after 4pm, Lucas is long gone. 🫥");
     }
     
     // Check for special date

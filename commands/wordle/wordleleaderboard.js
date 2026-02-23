@@ -35,18 +35,19 @@ module.exports = {
         // Build date filter based on period
         const now = new Date();
         let dateFilter = {};
+        let periodStart = null;
 
         if (period === 'year') {
-            const startOfYear = new Date(now.getFullYear(), 0, 1);
-            dateFilter = { postedAt: { [Op.gte]: startOfYear } };
+            periodStart = new Date(now.getFullYear(), 0, 1);
+            dateFilter = { postedAt: { [Op.gte]: periodStart } };
         } else if (period === 'month') {
-            const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-            dateFilter = { postedAt: { [Op.gte]: startOfMonth } };
+            periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
+            dateFilter = { postedAt: { [Op.gte]: periodStart } };
         } else if (period === 'week') {
-            const startOfWeek = new Date(now);
-            startOfWeek.setDate(now.getDate() - now.getDay());
-            startOfWeek.setHours(0, 0, 0, 0);
-            dateFilter = { postedAt: { [Op.gte]: startOfWeek } };
+            periodStart = new Date(now);
+            periodStart.setDate(now.getDate() - now.getDay());
+            periodStart.setHours(0, 0, 0, 0);
+            dateFilter = { postedAt: { [Op.gte]: periodStart } };
         }
 
         try {
@@ -57,7 +58,7 @@ module.exports = {
                     'username',
                     [fn('COUNT', col('id')), 'totalGames'],
                     [fn('SUM', literal('CASE WHEN score <= 6 THEN 1 ELSE 0 END')), 'wins'],
-                    [fn('AVG', literal('CASE WHEN score <= 6 THEN score ELSE NULL END')), 'avgScore'],
+                    [fn('AVG', literal('CASE WHEN score <= 6 THEN score ELSE 7 END')), 'avgScore'],
                 ],
                 where: dateFilter,
                 group: ['userId', 'username'],
@@ -71,7 +72,23 @@ module.exports = {
                 });
             }
 
-            // Calculate win rate and format data
+            // For "all time", get the earliest score date as the period start
+            if (period === 'all') {
+                const earliest = await WordleScore.findOne({
+                    attributes: ['postedAt'],
+                    order: [['postedAt', 'ASC']],
+                    raw: true,
+                });
+                if (earliest) {
+                    periodStart = new Date(earliest.postedAt);
+                }
+            }
+
+            // Calculate minimum games required (30% of days in period)
+            const daysInPeriod = Math.ceil((now - periodStart) / (1000 * 60 * 60 * 24)) + 1;
+            const minGames = Math.ceil(daysInPeriod * 0.3);
+
+            // Calculate win rate and format data, filter by minimum games
             const leaderboard = stats.map(s => ({
                 userId: s.userId,
                 username: s.username,
@@ -79,7 +96,14 @@ module.exports = {
                 wins: parseInt(s.wins, 10),
                 avgScore: s.avgScore ? parseFloat(s.avgScore).toFixed(2) : null,
                 winRate: s.totalGames > 0 ? ((s.wins / s.totalGames) * 100).toFixed(1) : 0,
-            }));
+            })).filter(entry => entry.totalGames >= minGames);
+
+            if (leaderboard.length === 0) {
+                return interaction.reply({
+                    content: `No players have completed the minimum ${minGames} games (30% of ${daysInPeriod} days) for this period.`,
+                    ephemeral: true,
+                });
+            }
 
             // Sort based on selected criteria
             if (sortBy === 'avg') {
@@ -127,9 +151,9 @@ module.exports = {
             const embed = new EmbedBuilder()
                 .setColor(0x538D4E) // Wordle green
                 .setTitle('🏆 Wordle Leaderboard')
-                .setDescription(`**${periodLabels[period]}** • Sorted by: ${sortLabels[sortBy]}`)
+                .setDescription(`**${periodLabels[period]}** • Sorted by: ${sortLabels[sortBy]}\n*Minimum ${minGames} games required (30% of ${daysInPeriod} days)*`)
                 .addFields({ name: 'Rankings', value: leaderboardText || 'No data available' })
-                .setFooter({ text: `${stats.length} players total` })
+                .setFooter({ text: `${leaderboard.length} qualified players • ${stats.length} total players` })
                 .setTimestamp();
 
             await interaction.reply({ embeds: [embed] });

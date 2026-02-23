@@ -59,6 +59,12 @@ module.exports = {
 						.setDescription('Filter by nominee')
 						.setRequired(false)
 				)
+				.addIntegerOption(option =>
+					option
+						.setName('year')
+						.setDescription('Year to view (defaults to current year)')
+						.setRequired(false)
+				)
 		)
 		.addSubcommand(subcommand =>
 			subcommand
@@ -70,6 +76,12 @@ module.exports = {
 						.setDescription('Filter by award type')
 						.setRequired(false)
 						.addChoices(...AWARD_CHOICES)
+				)
+				.addIntegerOption(option =>
+					option
+						.setName('year')
+						.setDescription('Year to view (defaults to current year)')
+						.setRequired(false)
 				)
 		)
 		.addSubcommand(subcommand =>
@@ -144,20 +156,22 @@ module.exports = {
 					});
 				}
 
-				// Check for duplicate nomination (same nominator, same message, same award)
+				// Use the year the nominated message was sent
+				const messageYear = message.createdAt.getFullYear();
+
+				// Check for duplicate nomination (same message, same award category)
 				const existing = await Nomination.findOne({
 					where: {
 						awardType: awardType,
 						messageLink: messageLink,
-						nominatorUserId: interaction.user.id,
 						guildId: interaction.guildId,
-						year: currentYear,
+						year: messageYear,
 					},
 				});
 
 				if (existing) {
 					return interaction.editReply({
-						content: `You already nominated this message for ${award.emoji} ${award.name}! 📝`,
+						content: `This message has already been nominated for ${award.emoji} ${award.name} by <@${existing.nominatorUserId}>! 📝`,
 					});
 				}
 
@@ -181,7 +195,7 @@ module.exports = {
 				// Save the nomination
 				const nomination = await Nomination.create({
 					awardType: awardType,
-					year: currentYear,
+					year: messageYear,
 					messageLink: messageLink,
 					messageContent: messageContent,
 					nomineeUserId: message.author.id,
@@ -202,7 +216,7 @@ module.exports = {
 						{ name: 'Nomination ID', value: `#${nomination.id}`, inline: true },
 						{ name: 'Message Link', value: `[Jump to message](${messageLink})`, inline: true }
 					)
-					.setFooter({ text: `Goutcord Awards ${currentYear}` })
+					.setFooter({ text: `Goutcord Awards ${messageYear}` })
 					.setTimestamp();
 
 				await interaction.editReply({ embeds: [embed] });
@@ -217,11 +231,12 @@ module.exports = {
 		else if (subcommand === 'list') {
 			const awardType = interaction.options.getString('award');
 			const filterUser = interaction.options.getUser('user');
+			const year = interaction.options.getInteger('year') || currentYear;
 
 			try {
 				const whereClause = {
 					guildId: interaction.guildId,
-					year: currentYear,
+					year: year,
 				};
 
 				if (awardType) {
@@ -244,7 +259,7 @@ module.exports = {
 					const filterMsg = filterText.length > 0 ? ` for ${filterText.join(' and ')}` : '';
 
 					return interaction.reply({
-						content: `No nominations found${filterMsg}. Time to nominate some bangers! 🎯`,
+						content: `No nominations found${filterMsg} in ${year}. Time to nominate some bangers! 🎯`,
 					});
 				}
 
@@ -258,9 +273,9 @@ module.exports = {
 					return `**#${n.id}** ${award.emoji} "${preview}"\n└ <@${n.nomineeUserId}> • [Link](${n.messageLink})`;
 				}).join('\n\n');
 
-				let title = `📋 Nominations ${currentYear}`;
+				let title = `📋 Nominations ${year}`;
 				if (awardType) {
-					title = `${AWARDS[awardType].emoji} ${AWARDS[awardType].name} Nominations`;
+					title = `${AWARDS[awardType].emoji} ${AWARDS[awardType].name} Nominations ${year}`;
 				}
 				if (filterUser) {
 					title += ` for ${filterUser.username}`;
@@ -285,11 +300,12 @@ module.exports = {
 
 		else if (subcommand === 'leaderboard') {
 			const awardType = interaction.options.getString('award');
+			const year = interaction.options.getInteger('year') || currentYear;
 
 			try {
 				const whereClause = {
 					guildId: interaction.guildId,
-					year: currentYear,
+					year: year,
 				};
 
 				if (awardType) {
@@ -304,30 +320,30 @@ module.exports = {
 						[sequelize.fn('COUNT', sequelize.col('nomineeUserId')), 'nominationCount'],
 					],
 					group: ['nomineeUserId', 'nomineeUsername'],
-					order: [[sequelize.literal('nominationCount'), 'DESC']],
+					order: [[sequelize.literal('"nominationCount"'), 'DESC']],
 					limit: 10,
 				});
 
 				if (leaderboard.length === 0) {
 					return interaction.reply({
-						content: `No nominations yet for ${currentYear}. Be the first to nominate! 🏆`,
+						content: `No nominations yet for ${year}. Be the first to nominate! 🏆`,
 					});
 				}
 
 				const medals = ['🥇', '🥈', '🥉'];
 				const leaderboardText = leaderboard.map((entry, index) => {
-					const medal = medals[index] || `**${index + 1}.**`;
+					const medal = medals[index] || '🏅';
 					const count = entry.dataValues.nominationCount;
 					return `${medal} <@${entry.nomineeUserId}> - **${count}** nomination${count !== 1 ? 's' : ''}`;
 				}).join('\n');
 
 				const totalNominations = await Nomination.count({ where: whereClause });
 
-				let title = `🏆 Goutcord Awards Leaderboard ${currentYear}`;
+				let title = `🏆 Goutcord Awards Leaderboard ${year}`;
 				let color = '#F1C40F';
 				if (awardType) {
 					const award = AWARDS[awardType];
-					title = `${award.emoji} ${award.name} Leaderboard`;
+					title = `${award.emoji} ${award.name} Leaderboard ${year}`;
 					color = '#FFD700';
 				}
 
