@@ -257,22 +257,24 @@ async function analyzeForMemories(userId, username, userMessage, botResponse) {
 
 User: ${username}
 User's message: "${userMessage}"
-Bot's response: "${botResponse}"
+Bot's response (for roast/joke context only): "${botResponse}"
 
 Extract ONLY clear, factual information in the following categories:
 
-1. **Facts**: Personal information they explicitly stated (job, location, hobbies, life events, etc.)
+1. **Facts**: Personal information the USER explicitly stated (job, location, hobbies, life events, etc.)
+   - ONLY from the user's message — NEVER from anything the bot said
    - Example: "I'm a software engineer" → fact: "is a software engineer"
    - Example: "I live in Seattle" → fact: "lives in Seattle"
    - Example: "I just got a dog" → fact: "recently got a dog"
 
-2. **Preferences**: Things they like/dislike, opinions, or preferences
+2. **Preferences**: Things the USER likes/dislikes, their opinions, or preferences
+   - ONLY from the user's message — NEVER from anything the bot said
    - Example: "I love Python" → preference: {"topic": "programming language", "value": "loves Python"}
    - Example: "I hate mornings" → preference: {"topic": "morning person", "value": "hates mornings"}
 
-3. **Inside Jokes**: Recurring jokes, memes, or funny references specific to this conversation
-   - Only include if it's genuinely a joke/reference that could be brought up again
-   - Example: If they made a funny typo or running gag
+3. **Inside Jokes**: A joke or funny reference the USER made that could be brought up again
+   - Only include if the user themselves made the joke — not something the bot invented
+   - Example: If the user made a funny typo or a running gag they started
 
 4. **Roast Context**: Did the user ask to be roasted or engage in trash talk?
    - Return "roast_requested" if they explicitly asked for a roast
@@ -288,11 +290,11 @@ Return your analysis in this EXACT JSON format (or empty arrays/objects if nothi
   "roastContext": "roast_requested" | "trash_talk" | null
 }
 
-IMPORTANT RULES:
-- Only extract information that is CLEARLY stated or strongly implied
-- Don't make assumptions or inferences
+CRITICAL RULES:
+- Facts and preferences must come ONLY from what the user explicitly said in their message
+- The bot's response may contain jokes, assumptions, or fabrications — do NOT treat anything in the bot's response as a fact about the user
+- Don't make assumptions or inferences beyond what the user literally said
 - Keep facts concise and specific
-- Only include inside jokes if they're genuinely memorable
 - Return empty arrays if nothing found
 - MUST return valid JSON only, no other text`;
 
@@ -350,29 +352,31 @@ function formatMemoryForPrompt(userId) {
   context += `Messages sent: ${memory.messageCount}\n`;
   context += `Known since: ${new Date(memory.firstSeen).toLocaleDateString()}\n`;
   
+  // Rotate facts: show the least-recently-surfaced ones, then bump their timestamp
+  const FACTS_PER_PROMPT = 4;
+  const PREFS_PER_PROMPT = 3;
+
   if (memory.facts.length > 0) {
+    const sorted = [...memory.facts].sort((a, b) =>
+      new Date(a.lastReferenced).getTime() - new Date(b.lastReferenced).getTime()
+    );
+    const selected = sorted.slice(0, FACTS_PER_PROMPT);
     context += `\nThings I know about them:\n`;
-    memory.facts.forEach(fact => {
-      const factText = typeof fact === 'string' ? fact : fact.text;
-      context += `- ${factText}\n`;
-      
-      // Update lastReferenced when included in prompt
-      if (typeof fact === 'object') {
-        fact.lastReferenced = new Date().toISOString();
-      }
+    selected.forEach(fact => {
+      context += `- ${fact.text}\n`;
+      fact.lastReferenced = new Date().toISOString();
     });
   }
-  
+
   if (Object.keys(memory.preferences).length > 0) {
+    const sorted = Object.entries(memory.preferences).sort((a, b) =>
+      new Date(a[1].lastReferenced).getTime() - new Date(b[1].lastReferenced).getTime()
+    );
+    const selected = sorted.slice(0, PREFS_PER_PROMPT);
     context += `\nTheir preferences:\n`;
-    Object.entries(memory.preferences).forEach(([key, pref]) => {
-      const prefValue = typeof pref === 'string' ? pref : pref.value;
-      context += `- ${key}: ${prefValue}\n`;
-      
-      // Update lastReferenced when included in prompt
-      if (typeof pref === 'object') {
-        pref.lastReferenced = new Date().toISOString();
-      }
+    selected.forEach(([key, pref]) => {
+      context += `- ${key}: ${pref.value}\n`;
+      pref.lastReferenced = new Date().toISOString();
     });
   }
   
@@ -384,15 +388,14 @@ function formatMemoryForPrompt(userId) {
     });
     // Delete all inside jokes after including them once - they're single-use
     memory.insideJokes = [];
+    saveMemories(memories);
   }
-  
+
   if (memory.roastScore !== 0) {
     context += `\nRoast engagement: ${memory.roastScore > 0 ? 'Loves the banter' : 'Sensitive to roasts'}\n`;
   }
-  
-  // Save the updated lastReferenced timestamps
+
   saveMemories(memories);
-  
   return context;
 }
 

@@ -4,10 +4,10 @@ const { Op, fn, col, literal } = require('sequelize');
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('wordleleaderboard')
-        .setDescription('View Wordle leaderboard')
+        .setDescription('Compare Wordle performance across all server members')
         .addStringOption(option =>
             option.setName('period')
-                .setDescription('Time period for leaderboard')
+                .setDescription('Filter the leaderboard to a specific time period')
                 .setRequired(false)
                 .addChoices(
                     { name: 'All Time', value: 'all' },
@@ -17,7 +17,7 @@ module.exports = {
                 ))
         .addStringOption(option =>
             option.setName('sort')
-                .setDescription('How to rank players')
+                .setDescription('Stat to rank players by')
                 .setRequired(false)
                 .addChoices(
                     { name: 'Average Score (Best)', value: 'avg' },

@@ -6,3 +6,5 @@ config/googleCredentials.json
 userMemories.json
 images/
 bootjaf/
+logs/
+pm2-startup.bat

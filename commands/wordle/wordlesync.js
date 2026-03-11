@@ -1,4 +1,5 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+const { Op } = require('sequelize');
 
 const WORDLE_CHANNEL_ID = '930279618437586974';
 const WORDLE_REGEX = /Wordle\s+([\d,]+)\s+([X1-6])\/6(\*)?/i;
@@ -81,40 +82,34 @@ module.exports = {
 
             await interaction.editReply(`🔄 Found ${allScores.length} Wordle posts in ${processed} messages. Importing to database...`);
 
-            // Bulk insert with ignoreDuplicates (much faster than individual queries)
-            let imported = 0;
-            let skipped = 0;
+            // Find which scores already exist so we can accurately count new vs skipped
+            const existingScores = await WordleScore.findAll({
+                where: {
+                    [Op.or]: allScores.map(s => ({ userId: s.userId, wordleNumber: s.wordleNumber })),
+                },
+                attributes: ['userId', 'wordleNumber'],
+            });
+            const existingSet = new Set(existingScores.map(s => `${s.userId}:${s.wordleNumber}`));
+            const newScores = allScores.filter(s => !existingSet.has(`${s.userId}:${s.wordleNumber}`));
+            const skipped = allScores.length - newScores.length;
 
-            // Process in batches of 100 for bulk insert
-            for (let i = 0; i < allScores.length; i += 100) {
-                const batch = allScores.slice(i, i + 100);
-                try {
-                    const result = await WordleScore.bulkCreate(batch, {
-                        ignoreDuplicates: true, // Skip existing entries based on unique index
-                    });
-                    imported += result.length;
-                } catch (err) {
-                    // If bulkCreate fails, fall back to individual inserts for this batch
-                    for (const scoreData of batch) {
-                        try {
-                            await WordleScore.findOrCreate({
-                                where: {
-                                    userId: scoreData.userId,
-                                    wordleNumber: scoreData.wordleNumber,
-                                },
-                                defaults: scoreData,
-                            }).then(([, created]) => {
-                                if (created) imported++;
-                                else skipped++;
-                            });
-                        } catch (innerErr) {
-                            skipped++;
-                        }
-                    }
-                }
+            // Bulk insert only truly new scores
+            let imported = 0;
+            for (let i = 0; i < newScores.length; i += 100) {
+                const batch = newScores.slice(i, i + 100);
+                await WordleScore.bulkCreate(batch, { ignoreDuplicates: true });
+                imported += batch.length;
             }
 
-            skipped = allScores.length - imported;
+            // React 📊 to each newly imported message
+            for (const scoreData of newScores) {
+                try {
+                    const msg = await channel.messages.fetch(scoreData.messageId);
+                    await msg.react('📊');
+                } catch (_) {
+                    // Message may have been deleted — skip silently
+                }
+            }
 
             await interaction.editReply(
                 `✅ **Sync Complete!**\n` +

@@ -4,14 +4,14 @@ const { Op } = require('sequelize');
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('wordlestats')
-        .setDescription('View Wordle statistics')
+        .setDescription('View your Wordle stats: win rate, streaks, score distribution, and recent games')
         .addUserOption(option =>
             option.setName('user')
-                .setDescription('User to view stats for (defaults to yourself)')
+                .setDescription('User to view stats for (defaults to you)')
                 .setRequired(false))
         .addStringOption(option =>
             option.setName('period')
-                .setDescription('Time period for stats')
+                .setDescription('Filter stats to a specific time period')
                 .setRequired(false)
                 .addChoices(
                     { name: 'All Time', value: 'all' },
@@ -163,7 +163,8 @@ module.exports = {
                 embed.addFields({ name: '🕐 Recent Games', value: recentText, inline: false });
             }
 
-            await interaction.reply({ embeds: [embed] });
+            const reply = await interaction.reply({ embeds: [embed], fetchReply: true });
+            setTimeout(() => reply.delete().catch(() => {}), 5 * 60 * 1000);
 
         } catch (error) {
             console.error('Error fetching Wordle stats:', error);

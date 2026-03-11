@@ -123,3 +123,14 @@ for (const file of eventFiles) {
 client.login(token)
     .then(() => console.log('Logged in successfully.'))
     .catch(error => console.error('Failed to log in:', error));
+
+// Graceful shutdown
+async function shutdown(signal) {
+    console.log(`Received ${signal}, shutting down...`);
+    client.destroy();
+    await sequelize.close();
+    process.exit(0);
+}
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
