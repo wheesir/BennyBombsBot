@@ -11,7 +11,7 @@ const GACMessage = require('../../models/GACMessage')(sequelize, Sequelize.DataT
 const genAI = new GoogleGenerativeAI(geminiApiKey);
 const model = genAI.getGenerativeModel({ model: geminiModel });
 
-async function generateLucasExcuse() {
+async function generateLucasExcuse(isMayFourth = false) {
   try {
     // Get last 5 excuses from database
     const lastExcuses = await GACMessage.findAll({
@@ -22,12 +22,18 @@ async function generateLucasExcuse() {
 
     const previousExcuses = lastExcuses.map(e => `- ${e.excuse}`).join("\n");
 
-    const prompt = `You are Lucas, a middle manager in IT who needs to leave work early. 
-Generate a single, creative excuse for why you need to leave work early today.
+    const mayFourthInstructions = isMayFourth ? `
+SPECIAL OCCASION: Today is May 4th — Star Wars Day. The excuse MUST be Star Wars themed.
+Weave in Star Wars references naturally (e.g. lightsabers, Jedi training, the Force, droids, the Kessel Run, Darth Vader, Midi-chlorians, the Death Star, the Millennium Falcon, etc.).
+Keep Lucas's clueless middle-manager voice — he takes this very seriously.
+` : '';
 
+    const prompt = `You are Lucas, a middle manager in IT who needs to leave work early.
+Generate a single, creative excuse for why you need to leave work early today.
+${mayFourthInstructions}
 IMPORTANT: Generate ONLY the reason/excuse itself. Do NOT include any phrases like:
 - "I need to leave early"
-- "I have to depart" 
+- "I have to depart"
 - "I need to head out"
 - "Sorry for leaving"
 - Any apologies or preambles
@@ -44,8 +50,7 @@ The excuse should:
 Here are the last 5 excuses that have already been used. DO NOT reuse or be too similar to these:
 ${previousExcuses || "(none yet)"}
 
-Explore a wide range of categories: pets, smart home devices, obscure community rules, minor bureaucratic crises, neighbors' antics, vehicle oddities, or delivery mishaps.
-
+${isMayFourth ? '' : 'Explore a wide range of categories: pets, smart home devices, obscure community rules, minor bureaucratic crises, neighbors\' antics, vehicle oddities, or delivery mishaps.\n'}
 EXAMPLES of correct format (notice they start directly with the situation):
 - "My neighbor's cat got stuck in my car's exhaust pipe and I'm the only one with the right tools to extract it safely."
 - "The artisanal honey I ordered from that obscure beekeeping collective is being delivered during a very specific window, and it requires immediate refrigeration to preserve its delicate floral notes."
@@ -119,17 +124,19 @@ module.exports = {
     }
     
     // Check for special date
-    const isApril21st2028 = today.getFullYear() === 2028 && 
-                           today.getMonth() === 3 && 
+    const isApril21st2028 = today.getFullYear() === 2028 &&
+                           today.getMonth() === 3 &&
                            today.getDate() === 21;
-    
+
     if (isApril21st2028) {
       return interaction.reply("Lucas has permanently left the building. No more excuses needed! 🎉");
     }
-    
+
+    const isMayFourth = today.getMonth() === 4 && today.getDate() === 4;
+
     // Main GAC command logic
     try {
-      await interaction.deferReply();
+      await interaction.deferReply({ ephemeral: isTestMode });
 
       // Only check for existing messages if NOT in test mode
       if (!isTestMode) {
@@ -145,7 +152,7 @@ module.exports = {
       }
 
       // Generate Lucas's excuse
-      const excuse = await generateLucasExcuse();
+      const excuse = await generateLucasExcuse(isMayFourth);
 
       // Create a new GACMessage in the database (skip in test mode)
       if (!isTestMode) {
@@ -158,8 +165,12 @@ module.exports = {
       }
 
       // Build the reply message
-      const replyContent = 
+      const mayFourthHeader = isMayFourth
+        ? '\n\n*✨ May the Fourth Be With You ✨*'
+        : '';
+      const replyContent =
         ':regional_indicator_g::regional_indicator_a::regional_indicator_c:' +
+        mayFourthHeader +
         '\n\n**Lucas:** "Hey team, I need to head out early today. ' + excuse + '"' +
         (isTestMode ? '\n\n*⚠️ Test mode - not saved to database*' : '');
 

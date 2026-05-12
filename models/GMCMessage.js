@@ -1,7 +1,7 @@
 module.exports = (sequelize, DataTypes) => {
 	return sequelize.define('GMCMessage', {
     date: {
-      type: DataTypes.DATE, // You can adjust the data type if needed
+      type: DataTypes.STRING,
       allowNull: false,
       unique: true,
     },

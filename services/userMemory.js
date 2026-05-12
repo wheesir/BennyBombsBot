@@ -253,22 +253,32 @@ function updateRoastScore(userId, change) {
  */
 async function analyzeForMemories(userId, username, userMessage, botResponse) {
   try {
+    const memory = getUserMemory(userId);
+    const existingFacts = memory.facts.map(f => f.text);
+    const existingPrefs = Object.entries(memory.preferences).map(([k, v]) => `${k}: ${v.value}`);
+
     const analysisPrompt = `Analyze this Discord conversation and extract any memorable information about the user.
 
 User: ${username}
 User's message: "${userMessage}"
 Bot's response (for roast/joke context only): "${botResponse}"
 
-Extract ONLY clear, factual information in the following categories:
+Already known about this user (DO NOT re-add these or near-duplicates):
+Facts: ${existingFacts.length > 0 ? existingFacts.map(f => `- ${f}`).join('\n') : '(none)'}
+Preferences: ${existingPrefs.length > 0 ? existingPrefs.map(p => `- ${p}`).join('\n') : '(none)'}
+
+Extract ONLY NEW information not already captured above:
 
 1. **Facts**: Personal information the USER explicitly stated (job, location, hobbies, life events, etc.)
    - ONLY from the user's message — NEVER from anything the bot said
+   - SKIP if the same or essentially the same fact is already known
    - Example: "I'm a software engineer" → fact: "is a software engineer"
    - Example: "I live in Seattle" → fact: "lives in Seattle"
    - Example: "I just got a dog" → fact: "recently got a dog"
 
 2. **Preferences**: Things the USER likes/dislikes, their opinions, or preferences
    - ONLY from the user's message — NEVER from anything the bot said
+   - SKIP if the same or essentially the same preference is already known
    - Example: "I love Python" → preference: {"topic": "programming language", "value": "loves Python"}
    - Example: "I hate mornings" → preference: {"topic": "morning person", "value": "hates mornings"}
 
@@ -477,9 +487,11 @@ function cleanOldMemories(userId) {
   const memory = getUserMemory(userId);
   const now = Date.now();
 
-  // Age thresholds (based on lastReferenced, not addedOn)
+  // Age thresholds based on addedOn — facts expire by age, not by last use.
+  // formatMemoryForPrompt updates lastReferenced for rotation, so using it for
+  // expiry would prevent cleanup from ever running.
+  const SIXTY_DAYS = 60 * 24 * 60 * 60 * 1000;
   const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
-  const FOURTEEN_DAYS = 14 * 24 * 60 * 60 * 1000;
 
   // Maximum item limits
   const MAX_FACTS = 10;
@@ -528,12 +540,11 @@ function cleanOldMemories(userId) {
     }
   });
 
-  // Remove facts not referenced in 30 days
+  // Remove facts older than 60 days (based on when they were first learned)
   const oldFactCount = memory.facts.length;
   memory.facts = memory.facts.filter(fact => {
-    const lastRef = new Date(fact.lastReferenced).getTime();
-    const age = now - lastRef;
-    return age < THIRTY_DAYS;
+    const age = now - new Date(fact.addedOn).getTime();
+    return age < SIXTY_DAYS;
   });
 
   // If still too many facts, keep only the most recently referenced
@@ -549,14 +560,12 @@ function cleanOldMemories(userId) {
     console.log(`🧹 Cleaned ${oldFactCount - memory.facts.length} stale facts for ${memory.username}`);
   }
 
-  // Remove preferences not referenced in 30 days
+  // Remove preferences older than 60 days (based on when they were first added)
   const oldPrefCount = Object.keys(memory.preferences).length;
   Object.keys(memory.preferences).forEach(key => {
     const pref = memory.preferences[key];
-    const lastRef = new Date(pref.lastReferenced).getTime();
-    const age = now - lastRef;
-
-    if (age >= THIRTY_DAYS) {
+    const age = now - new Date(pref.addedOn).getTime();
+    if (age >= SIXTY_DAYS) {
       delete memory.preferences[key];
     }
   });
@@ -577,12 +586,11 @@ function cleanOldMemories(userId) {
     console.log(`🧹 Cleaned ${oldPrefCount - Object.keys(memory.preferences).length} stale preferences for ${memory.username}`);
   }
 
-  // Remove inside jokes not referenced in 14 days (they get stale faster)
+  // Remove inside jokes older than 30 days (they get stale faster)
   const oldJokeCount = memory.insideJokes.length;
   memory.insideJokes = memory.insideJokes.filter(joke => {
-    const lastRef = new Date(joke.lastReferenced).getTime();
-    const age = now - lastRef;
-    return age < FOURTEEN_DAYS;
+    const age = now - new Date(joke.addedOn).getTime();
+    return age < THIRTY_DAYS;
   });
 
   // Keep only most recently referenced inside jokes
