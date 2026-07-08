@@ -12,6 +12,18 @@ const SAVE_DEBOUNCE_MS = 5000; // 5 seconds - batch writes for efficiency
 let saveTimeout = null;
 let pendingSave = false;
 
+// Tracks the on-disk mtime as of our last read/write, so we can tell when
+// the file was edited externally (e.g. by hand) since we last touched it.
+let lastKnownMtimeMs = 0;
+
+function getFileMtimeMs() {
+  try {
+    return fs.statSync(MEMORY_FILE).mtimeMs;
+  } catch {
+    return 0;
+  }
+}
+
 /**
  * Load memories from file system
  * @returns {Object} User memories object indexed by userId
@@ -20,6 +32,7 @@ function loadMemories() {
   try {
     if (fs.existsSync(MEMORY_FILE)) {
       const data = fs.readFileSync(MEMORY_FILE, 'utf8');
+      lastKnownMtimeMs = getFileMtimeMs();
       return JSON.parse(data);
     }
   } catch (error) {
@@ -55,12 +68,62 @@ function saveMemories(memories, immediate = false) {
 }
 
 /**
+ * Diff a user's old facts/preferences against a freshly-loaded copy and
+ * record anything that disappeared as "forgotten" so analyzeForMemories()
+ * won't silently re-learn it later.
+ * @param {Object} previous - In-memory memories object before the reload
+ * @param {Object} fresh - Memories object just loaded from disk
+ */
+function mergeForgottenFromExternalEdit(previous, fresh) {
+  Object.keys(previous).forEach(userId => {
+    const oldMem = previous[userId];
+    const newMem = fresh[userId];
+    if (!oldMem || !newMem) return;
+
+    const oldFactTexts = (oldMem.facts || []).map(f => typeof f === 'string' ? f : f.text);
+    const newFactTexts = new Set((newMem.facts || []).map(f => typeof f === 'string' ? f : f.text));
+    newMem.forgottenFacts = newMem.forgottenFacts || [];
+    oldFactTexts
+      .filter(t => !newFactTexts.has(t))
+      .forEach(t => {
+        if (!newMem.forgottenFacts.includes(t)) newMem.forgottenFacts.push(t);
+      });
+
+    const oldPrefKeys = Object.keys(oldMem.preferences || {});
+    const newPrefKeys = new Set(Object.keys(newMem.preferences || {}));
+    newMem.forgottenPreferences = newMem.forgottenPreferences || [];
+    oldPrefKeys
+      .filter(k => !newPrefKeys.has(k))
+      .forEach(k => {
+        if (!newMem.forgottenPreferences.includes(k)) newMem.forgottenPreferences.push(k);
+      });
+  });
+}
+
+/**
  * Actually perform the file write operation
+ * If the file was modified externally (e.g. hand-edited) since our last
+ * read/write, reload it instead of blindly overwriting those changes with
+ * our stale in-memory copy.
  * @param {Object} memories - Memories object to write
  */
 function performSave(memories) {
   try {
+    if (getFileMtimeMs() > lastKnownMtimeMs) {
+      console.log('⚠️ userMemories.json was edited externally — reloading and preserving your edits');
+      const fresh = loadMemories();
+      mergeForgottenFromExternalEdit(memories, fresh);
+      Object.keys(memories).forEach(k => delete memories[k]);
+      Object.assign(memories, fresh);
+      lastKnownMtimeMs = getFileMtimeMs();
+      pendingSave = false;
+      saveTimeout = null;
+      performSave(memories); // persist the merged forgotten-lists
+      return;
+    }
+
     fs.writeFileSync(MEMORY_FILE, JSON.stringify(memories, null, 2));
+    lastKnownMtimeMs = getFileMtimeMs();
     pendingSave = false;
     saveTimeout = null;
   } catch (error) {
@@ -85,6 +148,37 @@ process.on('SIGINT', () => {
 let memories = loadMemories();
 
 /**
+ * If the on-disk file has changed since our last read/write, reload it,
+ * remembering anything that was hand-deleted so it doesn't get re-learned.
+ * Called on a poll interval so manual edits to userMemories.json while the
+ * bot is running take effect on their own, without a restart or command.
+ */
+function syncFromDiskIfChanged() {
+  const diskMtime = getFileMtimeMs();
+  if (diskMtime <= lastKnownMtimeMs) return;
+
+  console.log('📥 Detected manual edit to userMemories.json — syncing and remembering removed items');
+
+  if (saveTimeout) {
+    clearTimeout(saveTimeout);
+    saveTimeout = null;
+    pendingSave = false;
+  }
+
+  const fresh = loadMemories();
+  mergeForgottenFromExternalEdit(memories, fresh);
+  Object.keys(memories).forEach(k => delete memories[k]);
+  Object.assign(memories, fresh);
+  lastKnownMtimeMs = getFileMtimeMs();
+  saveMemories(memories, true);
+}
+
+// Poll rather than fs.watch: some editors save via a temp-file-then-rename,
+// which fs.watch can miss or lose the handle for. Polling the mtime is slower
+// (a few seconds) but reliable across editors/platforms.
+fs.watchFile(MEMORY_FILE, { interval: 3000 }, syncFromDiskIfChanged);
+
+/**
  * Get or create user memory object
  * Creates a new memory structure if user doesn't exist
  *
@@ -99,6 +193,8 @@ function getUserMemory(userId) {
       facts: [],
       preferences: {},
       insideJokes: [],
+      forgottenFacts: [],
+      forgottenPreferences: [],
       firstSeen: new Date().toISOString(),
       lastSeen: new Date().toISOString(),
       messageCount: 0,
@@ -107,7 +203,11 @@ function getUserMemory(userId) {
     };
     saveMemories(memories);
   }
-  return memories[userId];
+  const memory = memories[userId];
+  // Migrate memory objects created before forgotten-lists existed
+  if (!memory.forgottenFacts) memory.forgottenFacts = [];
+  if (!memory.forgottenPreferences) memory.forgottenPreferences = [];
+  return memory;
 }
 
 /**
@@ -256,6 +356,8 @@ async function analyzeForMemories(userId, username, userMessage, botResponse) {
     const memory = getUserMemory(userId);
     const existingFacts = memory.facts.map(f => f.text);
     const existingPrefs = Object.entries(memory.preferences).map(([k, v]) => `${k}: ${v.value}`);
+    const forgottenFacts = memory.forgottenFacts || [];
+    const forgottenPrefCategories = memory.forgottenPreferences || [];
 
     const analysisPrompt = `Analyze this Discord conversation and extract any memorable information about the user.
 
@@ -266,6 +368,10 @@ Bot's response (for roast/joke context only): "${botResponse}"
 Already known about this user (DO NOT re-add these or near-duplicates):
 Facts: ${existingFacts.length > 0 ? existingFacts.map(f => `- ${f}`).join('\n') : '(none)'}
 Preferences: ${existingPrefs.length > 0 ? existingPrefs.map(p => `- ${p}`).join('\n') : '(none)'}
+
+The user (or an admin) has explicitly asked to forget these — DO NOT re-add them or anything near-equivalent, even if the topic comes up again:
+Forgotten facts: ${forgottenFacts.length > 0 ? forgottenFacts.map(f => `- ${f}`).join('\n') : '(none)'}
+Forgotten preference categories: ${forgottenPrefCategories.length > 0 ? forgottenPrefCategories.join(', ') : '(none)'}
 
 Extract ONLY NEW information not already captured above:
 
@@ -320,15 +426,19 @@ CRITICAL RULES:
     
     const analysis = JSON.parse(jsonMatch[0]);
     
-    // Process extracted information
+    // Process extracted information, excluding anything explicitly forgotten
     if (analysis.facts && analysis.facts.length > 0) {
-      analysis.facts.forEach(fact => addFact(userId, fact));
+      analysis.facts
+        .filter(fact => !forgottenFacts.includes(fact))
+        .forEach(fact => addFact(userId, fact));
     }
-    
+
     if (analysis.preferences && analysis.preferences.length > 0) {
-      analysis.preferences.forEach(pref => {
-        addPreference(userId, pref.category, pref.value);
-      });
+      analysis.preferences
+        .filter(pref => !forgottenPrefCategories.includes(pref.category))
+        .forEach(pref => {
+          addPreference(userId, pref.category, pref.value);
+        });
     }
     
     if (analysis.insideJokes && analysis.insideJokes.length > 0) {
@@ -460,6 +570,47 @@ function checkAchievements(userId) {
   }
 }
 
+function getAllUserIds() {
+  return Object.keys(memories);
+}
+
+function reloadMemories() {
+  // Flush any pending debounced save first so we don't lose recent writes
+  if (pendingSave && saveTimeout) {
+    clearTimeout(saveTimeout);
+    performSave(memories);
+  }
+  const fresh = loadMemories();
+  mergeForgottenFromExternalEdit(memories, fresh);
+  Object.keys(memories).forEach(k => delete memories[k]);
+  Object.assign(memories, fresh);
+  lastKnownMtimeMs = getFileMtimeMs();
+  console.log('🔄 User memories reloaded from disk');
+}
+
+function removeFact(userId, factText) {
+  const memory = getUserMemory(userId);
+  const before = memory.facts.length;
+  memory.facts = memory.facts.filter(f => (typeof f === 'string' ? f : f.text) !== factText);
+  if (memory.facts.length !== before) {
+    if (!memory.forgottenFacts.includes(factText)) memory.forgottenFacts.push(factText);
+    saveMemories(memories);
+    return true;
+  }
+  return false;
+}
+
+function removePreference(userId, category) {
+  const memory = getUserMemory(userId);
+  if (memory.preferences[category] !== undefined) {
+    delete memory.preferences[category];
+    if (!memory.forgottenPreferences.includes(category)) memory.forgottenPreferences.push(category);
+    saveMemories(memories);
+    return true;
+  }
+  return false;
+}
+
 /**
  * Manually set a nickname for a user
  *
@@ -490,8 +641,8 @@ function cleanOldMemories(userId) {
   // Age thresholds based on addedOn — facts expire by age, not by last use.
   // formatMemoryForPrompt updates lastReferenced for rotation, so using it for
   // expiry would prevent cleanup from ever running.
-  const SIXTY_DAYS = 60 * 24 * 60 * 60 * 1000;
-  const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
+  const SIXTY_DAYS = 21 * 24 * 60 * 60 * 1000;  // 21 days
+  const THIRTY_DAYS = 14 * 24 * 60 * 60 * 1000; // 14 days
 
   // Maximum item limits
   const MAX_FACTS = 10;
@@ -616,6 +767,8 @@ function cleanOldMemories(userId) {
 // Export functions
 module.exports = {
   getUserMemory,
+  getAllUserIds,
+  reloadMemories,
   updateLastSeen,
   addFact,
   addPreference,
@@ -625,6 +778,8 @@ module.exports = {
   checkAchievements,
   setNickname,
   cleanOldMemories,
+  removeFact,
+  removePreference,
   analyzeForMemories,
   formatMemoryForPrompt,
   getMemorySummary

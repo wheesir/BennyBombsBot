@@ -1,4 +1,4 @@
-const { SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const { GoogleGenerativeAI } = require('@google/generative-ai');  // Corrected package import
 require('dotenv').config();  // Ensure your .env file is loaded
 const { geminiApiKey, geminiModel } = require('../../config.json');
@@ -25,7 +25,7 @@ module.exports = {
             await interaction.reply(result.response.text());
         } catch (error) {
             console.error('Error handling /test command:', error);
-            await interaction.reply({ content: 'Failed to execute /test command.', ephemeral: true });
+            await interaction.reply({ content: 'Failed to execute /test command.', flags: MessageFlags.Ephemeral });
         }
     },
 };

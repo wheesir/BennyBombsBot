@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const { Sequelize } = require('sequelize');
 const sequelize = require('../../db.js');
 const OutOfContext = require('../../models/OutOfContext')(sequelize, Sequelize.DataTypes);
@@ -71,7 +71,7 @@ module.exports = {
 			if (!match) {
 				return interaction.reply({
 					content: "That doesn't look like a valid Discord message link. Right-click a message and select 'Copy Message Link'. 🔗",
-					ephemeral: true,
+					flags: MessageFlags.Ephemeral,
 				});
 			}
 
@@ -81,7 +81,7 @@ module.exports = {
 			if (guildId !== interaction.guildId) {
 				return interaction.reply({
 					content: "That message is from a different server. Keep the quotes local! 🏠",
-					ephemeral: true,
+					flags: MessageFlags.Ephemeral,
 				});
 			}
 
@@ -207,7 +207,7 @@ module.exports = {
 				console.error('Error fetching random quote:', error);
 				await interaction.reply({
 					content: 'Failed to fetch a quote. The database is judging you. 👀',
-					ephemeral: true,
+					flags: MessageFlags.Ephemeral,
 				});
 			}
 		}
@@ -254,7 +254,7 @@ module.exports = {
 				console.error('Error listing quotes:', error);
 				await interaction.reply({
 					content: 'Failed to list quotes. Try again when Mercury is out of retrograde. 🌙',
-					ephemeral: true,
+					flags: MessageFlags.Ephemeral,
 				});
 			}
 		}
@@ -304,7 +304,7 @@ module.exports = {
 				console.error('Error fetching leaderboard:', error);
 				await interaction.reply({
 					content: 'Leaderboard machine broke. 🔧',
-					ephemeral: true,
+					flags: MessageFlags.Ephemeral,
 				});
 			}
 		}
@@ -323,7 +323,7 @@ module.exports = {
 				if (!quote) {
 					return interaction.reply({
 						content: `Quote #${quoteId} doesn't exist. Nice try though. 🕵️`,
-						ephemeral: true,
+						flags: MessageFlags.Ephemeral,
 					});
 				}
 
@@ -331,7 +331,7 @@ module.exports = {
 				if (quote.addedByUserId !== interaction.user.id) {
 					return interaction.reply({
 						content: `Only ${quote.addedByUsername} can delete this quote. No quote theft allowed. 🚫`,
-						ephemeral: true,
+						flags: MessageFlags.Ephemeral,
 					});
 				}
 
@@ -344,7 +344,7 @@ module.exports = {
 				console.error('Error deleting quote:', error);
 				await interaction.reply({
 					content: 'Failed to delete. The quote has become too powerful. 💀',
-					ephemeral: true,
+					flags: MessageFlags.Ephemeral,
 				});
 			}
 		}

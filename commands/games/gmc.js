@@ -11,7 +11,9 @@ const GMCMessage = require('../../models/GMCMessage')(sequelize, Sequelize.DataT
  *
  * Each entry can have:
  * - month: 1-12 (January = 1, December = 12)
- * - day: 1-31
+ * - day: 1-31 (for fixed dates)
+ * - weekday + nth: (for floating dates instead of 'day') weekday is 0-6 (Sun-Sat),
+ *   nth is 1-4 for the 1st/2nd/3rd/4th occurrence in the month, or -1 for the last occurrence
  * - year: (optional) specific year, omit for recurring yearly
  * - message: (optional) custom text message to send instead of normal GMC
  * - emojis: (optional) array of emojis to use instead of random ones
@@ -28,15 +30,86 @@ const SPECIAL_DATES = [
   // Good Morning Fisherman!
   { month: 1, day: 16, year: 2026, emojis: ['🎣', '🐟', '🐠', '🐡'], gmcOverride: 'GMF' },
 
-  // Example: Recurring yearly with custom emojis
+  // New Year's Day
+  { month: 1, day: 1, emojis: ['🎉', '🥳', '✨'], prefixText: '🎉 Happy New Year! ', suffixText: ' 🎉' },
+
+  // Martin Luther King Jr. Day - 3rd Monday of January
+  { month: 1, weekday: 1, nth: 3, emojis: ['✊🏾', '🕊️', '📖'], prefixText: '🕊️ Honoring Dr. King today! ' },
+
+  // Valentine's Day
+  { month: 2, day: 14, emojis: ['❤️', '💘', '💕', '🌹'] },
+
+  // Presidents Day - 3rd Monday of February
+  { month: 2, weekday: 1, nth: 3, emojis: ['🇺🇸', '🎩', '🦅'] },
+
+  // St. Patrick's Day
+  { month: 3, day: 17, emojis: ['☘️', '🍀', '🌈'], prefixText: "☘️ Top o' the mornin'! " },
+
+  // Memorial Day - last Monday of May
+  { month: 5, weekday: 1, nth: -1, emojis: ['🇺🇸', '🎖️', '🌷'] },
+
+  // Juneteenth
+  { month: 6, day: 19, emojis: ['✊🏾', '🇺🇸', '🎉'] },
+
+  // Independence Day
+  { month: 7, day: 4, emojis: ['🎆', '🎇', '🇺🇸', '🧨'] },
+
+  // Labor Day - 1st Monday of September
+  { month: 9, weekday: 1, nth: 1, emojis: ['🛠️', '👷', '🇺🇸'] },
+
+  // Columbus Day / Indigenous Peoples Day - 2nd Monday of October
+  { month: 10, weekday: 1, nth: 2, emojis: ['🌎', '⛵'] },
+
+  // Halloween with spooky emojis
+  { month: 10, day: 31, emojis: ['🎃', '👻', '🦇', '🕷️', '💀'] },
+
+  // Veterans Day
+  { month: 11, day: 11, emojis: ['🇺🇸', '🎖️', '🫡'] },
+
+  // Thanksgiving - 4th Thursday of November
+  { month: 11, weekday: 4, nth: 4, emojis: ['🦃', '🍁', '🥧'], prefixText: '🦃 Happy Thanksgiving! ' },
+
+  // Christmas Eve
+  { month: 12, day: 24, emojis: ['🎄', '✨', '🕯️'] },
+
+  // Christmas Day
   { month: 12, day: 25, emojis: ['🎄', '🎅', '🎁', '⛄'] },
 
-  // Example: Recurring with prefix/suffix text
-  { month: 1, day: 1, prefixText: '🎉 Happy New Year! ', suffixText: ' 🎉' },
-
-  // Example: Halloween with spooky emojis
-  { month: 10, day: 31, emojis: ['🎃', '👻', '🦇', '🕷️', '💀'] },
+  // New Year's Eve
+  { month: 12, day: 31, emojis: ['🥂', '🎉', '✨'], suffixText: ' See you next year! 🎆' },
 ];
+
+/**
+ * Get the day-of-month for the nth occurrence of a weekday in a given month/year
+ * @param {number} year
+ * @param {number} month - 1-indexed (January = 1)
+ * @param {number} weekday - 0-6 (Sunday = 0)
+ * @param {number} nth - 1-4 for the nth occurrence, or -1 for the last occurrence
+ * @returns {number|null} - Day of month, or null if not found
+ */
+function getNthWeekdayOfMonth(year, month, weekday, nth) {
+  if (nth === -1) {
+    const lastDayOfMonth = new Date(year, month, 0).getDate();
+    for (let day = lastDayOfMonth; day >= 1; day--) {
+      if (new Date(year, month - 1, day).getDay() === weekday) {
+        return day;
+      }
+    }
+    return null;
+  }
+
+  let occurrences = 0;
+  const daysInMonth = new Date(year, month, 0).getDate();
+  for (let day = 1; day <= daysInMonth; day++) {
+    if (new Date(year, month - 1, day).getDay() === weekday) {
+      occurrences++;
+      if (occurrences === nth) {
+        return day;
+      }
+    }
+  }
+  return null;
+}
 
 /**
  * Check if today matches a special date
@@ -50,9 +123,17 @@ function getSpecialDate(today) {
 
   return SPECIAL_DATES.find(special => {
     const monthMatch = special.month === month;
-    const dayMatch = special.day === day;
+    if (!monthMatch) return false;
+
     const yearMatch = special.year === undefined || special.year === year;
-    return monthMatch && dayMatch && yearMatch;
+    if (!yearMatch) return false;
+
+    if (special.weekday !== undefined && special.nth !== undefined) {
+      const floatingDay = getNthWeekdayOfMonth(year, special.month, special.weekday, special.nth);
+      return floatingDay === day;
+    }
+
+    return special.day === day;
   }) || null;
 }
 

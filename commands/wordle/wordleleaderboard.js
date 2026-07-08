@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const { Op, fn, col, literal } = require('sequelize');
 
 module.exports = {
@@ -68,7 +68,7 @@ module.exports = {
             if (stats.length === 0) {
                 return interaction.reply({
                     content: 'No Wordle scores found for the selected period.',
-                    ephemeral: true,
+                    flags: MessageFlags.Ephemeral,
                 });
             }
 
@@ -101,7 +101,7 @@ module.exports = {
             if (leaderboard.length === 0) {
                 return interaction.reply({
                     content: `No players have completed the minimum ${minGames} games (30% of ${daysInPeriod} days) for this period.`,
-                    ephemeral: true,
+                    flags: MessageFlags.Ephemeral,
                 });
             }
 
@@ -162,7 +162,7 @@ module.exports = {
             console.error('Error fetching Wordle leaderboard:', error);
             await interaction.reply({
                 content: 'An error occurred while fetching the leaderboard.',
-                ephemeral: true,
+                flags: MessageFlags.Ephemeral,
             });
         }
     },

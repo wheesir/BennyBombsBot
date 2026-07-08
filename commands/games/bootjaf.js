@@ -2,7 +2,7 @@ const fetch = require('node-fetch');
 const { SlashCommandBuilder } = require('discord.js');
 const Sequelize = require('sequelize');
 const sequelize = require('../../db.js');
-const { tenorApiKey } = require('../../config.json');
+const { GIPHYApiKey } = require('../../config.json');
 
 const BootJaf = require('../../models/BootJaf')(sequelize, Sequelize.DataTypes);
 
@@ -18,7 +18,9 @@ module.exports = {
 
         const bootJafCountDisplay = bootJafCount.usage_count + 1;
 
-        interaction.reply(`${bootJafCountDisplay}`);
+        const isDevilCount = bootJafCountDisplay === 666;
+
+        interaction.reply(isDevilCount ? `😈 ${bootJafCountDisplay} 😈` : `${bootJafCountDisplay}`);
 
         try {
             await BootJaf.create({
@@ -30,12 +32,17 @@ module.exports = {
             console.log(error);
         }
 
-        const url = `https://g.tenor.com/v1/search?q=milk&key=${tenorApiKey}&limit=50`;
+        if (isDevilCount) {
+            interaction.channel.send('The number of the beast has been reached. Jaf has been booted straight to hell.');
+        }
+
+        const searchTerm = isDevilCount ? 'satan' : 'milk';
+        const url = `https://api.giphy.com/v1/gifs/search?api_key=${GIPHYApiKey}&q=${searchTerm}&limit=50&rating=r`;
         const response = await fetch(url);
         const json = await response.json();
 
-        const index = Math.floor(Math.random() * json.results.length);
+        const index = Math.floor(Math.random() * json.data.length);
 
-        interaction.channel.send(json.results[index].url);
+        interaction.channel.send(json.data[index].url);
     },
 };

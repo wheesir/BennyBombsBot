@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const { Op } = require('sequelize');
 
 module.exports = {
@@ -55,7 +55,7 @@ module.exports = {
             if (scores.length === 0) {
                 return interaction.reply({
                     content: `No Wordle scores found for ${targetUser.username} in the selected period.`,
-                    ephemeral: true,
+                    flags: MessageFlags.Ephemeral,
                 });
             }
 
@@ -170,7 +170,7 @@ module.exports = {
             console.error('Error fetching Wordle stats:', error);
             await interaction.reply({
                 content: 'An error occurred while fetching Wordle stats.',
-                ephemeral: true,
+                flags: MessageFlags.Ephemeral,
             });
         }
     },

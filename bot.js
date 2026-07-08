@@ -28,6 +28,7 @@ try {
     const OutOfContext = require('./models/OutOfContext')(sequelize, Sequelize.DataTypes);
     const Nomination = require('./models/Nomination')(sequelize, Sequelize.DataTypes);
     const WordleScore = require('./models/WordleScore')(sequelize, Sequelize.DataTypes);
+    const WordleReminderOptIn = require('./models/WordleReminderOptIn')(sequelize, Sequelize.DataTypes);
 
     // Make models accessible via client
     client.models = {
@@ -38,6 +39,7 @@ try {
         OutOfContext,
         Nomination,
         WordleScore,
+        WordleReminderOptIn,
     };
     client.sequelize = sequelize;
 

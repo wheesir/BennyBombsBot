@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const { Sequelize, Op } = require('sequelize');
 const sequelize = require('../../db.js');
 const Nomination = require('../../models/Nomination')(sequelize, Sequelize.DataTypes);
@@ -110,7 +110,7 @@ module.exports = {
 			if (!match) {
 				return interaction.reply({
 					content: "That doesn't look like a valid Discord message link. Right-click a message and select 'Copy Message Link'. 🔗",
-					ephemeral: true,
+					flags: MessageFlags.Ephemeral,
 				});
 			}
 
@@ -120,7 +120,7 @@ module.exports = {
 			if (guildId !== interaction.guildId) {
 				return interaction.reply({
 					content: "That message is from a different server. Keep the nominations local! 🏠",
-					ephemeral: true,
+					flags: MessageFlags.Ephemeral,
 				});
 			}
 
@@ -293,7 +293,7 @@ module.exports = {
 				console.error('Error listing nominations:', error);
 				await interaction.reply({
 					content: 'Failed to fetch nominations. Try again later. 😓',
-					ephemeral: true,
+					flags: MessageFlags.Ephemeral,
 				});
 			}
 		}
@@ -359,7 +359,7 @@ module.exports = {
 				console.error('Error fetching leaderboard:', error);
 				await interaction.reply({
 					content: 'Leaderboard machine broke. 🔧',
-					ephemeral: true,
+					flags: MessageFlags.Ephemeral,
 				});
 			}
 		}
@@ -378,14 +378,14 @@ module.exports = {
 				if (!nomination) {
 					return interaction.reply({
 						content: `Nomination #${nominationId} doesn't exist. 🔍`,
-						ephemeral: true,
+						flags: MessageFlags.Ephemeral,
 					});
 				}
 
 				if (nomination.nominatorUserId !== interaction.user.id) {
 					return interaction.reply({
 						content: `Only ${nomination.nominatorUsername} can delete this nomination. 🚫`,
-						ephemeral: true,
+						flags: MessageFlags.Ephemeral,
 					});
 				}
 
@@ -399,7 +399,7 @@ module.exports = {
 				console.error('Error deleting nomination:', error);
 				await interaction.reply({
 					content: 'Failed to delete nomination. Try again later. 😵',
-					ephemeral: true,
+					flags: MessageFlags.Ephemeral,
 				});
 			}
 		}

@@ -1,7 +1,7 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const fetch = require('node-fetch');
-// Define the Tenor API key
-const { tenorApiKey } = require('../../config.json');
+// Define the Giphy API key
+const { GIPHYApiKey } = require('../../config.json');
 
 // Define an array to keep track of users using the /slot command
 let slotUsers = [null, null, null, null]; // Initialize with 4 null slots
@@ -26,7 +26,7 @@ module.exports = {
 
     // Check if the user has already used the /slot command
     // if (slotUsers.includes(user)) {
-    //   await interaction.reply({ content: 'You have already used the /slot command.', ephemeral: true });
+    //   await interaction.reply({ content: 'You have already used the /slot command.', flags: MessageFlags.Ephemeral });
     //   return;
     // }
 
@@ -44,25 +44,25 @@ module.exports = {
       // Clear the list of users
       slotUsers = [null, null, null, null];
 
-      // Retrieve a random GIF from Tenor API
+      // Retrieve a random GIF from Giphy API
       try {
-        const url = `https://g.tenor.com/v1/search?q=stuffed&key=${tenorApiKey}&limit=50`;
+        const url = `https://api.giphy.com/v1/gifs/search?api_key=${GIPHYApiKey}&q=stuffed&limit=50&rating=r`;
         const response = await fetch(url);
         const json = await response.json();
 
-        const index = Math.floor(Math.random() * json.results.length);
-        
+        const index = Math.floor(Math.random() * json.data.length);
+
 
         // const embed = new EmbedBuilder()
         //   .setURL(
-        //         {value: `${json.results[index].url}`},
+        //         {value: `${json.data[index].url}`},
         //         {value: `${specifiedImageUrl}`},
         //     ); // Set the image URL as the image in the embed
         // await interaction.followUp(embed);
         await interaction.followUp(`${specifiedImageUrl}`);
-        await interaction.followUp(`${json.results[index].url}`);
+        await interaction.followUp(`${json.data[index].url}`);
       } catch (error) {
-        console.error('Error fetching GIF from Tenor:', error);
+        console.error('Error fetching GIF from Giphy:', error);
         await interaction.followUp('An error occurred while selecting a random GIF.');
       }
 
@@ -77,7 +77,7 @@ module.exports = {
     // Set a timeout to remove the user from the list if they don't use /slot again within 2 minutes
     inactivityTimer = setTimeout(() => {
       slotUsers = [null, null, null, null]; // Clear the array
-      interaction.followUp({content:`All slots have been cleared due to inactivity.`, ephemeral: true });
+      interaction.followUp({content:`All slots have been cleared due to inactivity.`, flags: MessageFlags.Ephemeral });
     }, maxWaitTime);
   },
 };
