@@ -1,13 +1,15 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const OpenAI = require('openai'); // Use the correct constructor
-const { chatGptKey } = require('../../config.json');
+const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder } = require('discord.js');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { geminiApiKey, geminiImageModel } = require('../../config.json');
 const Sequelize = require('sequelize');
 const sequelize = require('../../db.js');
 
 const OpenAIAPIUsage = require('../../models/OpenAIAPIUsage')(sequelize, Sequelize.DataTypes);
 
-const openai = new OpenAI({
-  apiKey: chatGptKey,
+const genAI = new GoogleGenerativeAI(geminiApiKey);
+const model = genAI.getGenerativeModel({
+  model: geminiImageModel,
+  generationConfig: { responseModalities: ['Text', 'Image'] },
 });
 
 module.exports = {
@@ -38,29 +40,24 @@ module.exports = {
     await interaction.deferReply();
 
     try {
-      const response = await openai.images.generate({ prompt: userPrompt });
+      const result = await model.generateContent(userPrompt);
+      const parts = result.response.candidates?.[0]?.content?.parts || [];
+      const imagePart = parts.find(part => part.inlineData);
 
-      // Check if 'data' exists and is an array
-      if (response.data && Array.isArray(response.data)) {
-        // Extract image URLs from the 'data' array
-        const imageUrls = response.data.map(item => item.url);
-        const imageUrl = imageUrls[0]; // Assuming you want the first image URL
-
-        // Create a MessageEmbed to embed the image
+      if (imagePart) {
+        // Gemini returns the image as inline base64 data, so attach it directly
+        const buffer = Buffer.from(imagePart.inlineData.data, 'base64');
+        const attachment = new AttachmentBuilder(buffer, { name: 'image.png' });
         const embed = new EmbedBuilder()
-          .setImage(imageUrl); // Set the image URL as the image in the embed
+          .setImage('attachment://image.png');
 
-        // Respond with the embedded image
-        await interaction.editReply({ embeds: [embed] });
+        await interaction.editReply({ embeds: [embed], files: [attachment] });
       } else {
-        // If the OpenAI API response is null, send a generic error message
         await interaction.followUp('Failed to generate an image.');
       }
     } catch (error) {
-      // If there's an error, send the specific OpenAI API error message if available,
-      // otherwise send a generic error message
-      const errorMessage = 'OpenAI API Error: ' + (error.response?.data || error.message);
-      await interaction.followUp(errorMessage || 'An error occurred while processing your request.');
+      const errorMessage = 'Gemini API Error: ' + (error.message || 'Unknown error');
+      await interaction.followUp(errorMessage);
     }
   },
 };

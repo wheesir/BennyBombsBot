@@ -5,7 +5,7 @@ A Discord bot built with discord.js v14 for server games, memes, AI chat, Wordle
 ## Features
 
 - **Games** - Good Morning Crypto (GMC) daily game, slot machine, Boot Jaf tracking
-- **AI Integration** - Google Gemini-powered chat responses, AI image generation via OpenAI, conversation summaries
+- **AI Integration** - Google Gemini-powered chat responses, AI image generation, conversation summaries
 - **Wordle Tracking** - Automatic score detection, personal stats, and server-wide leaderboards
 - **Social** - Nomination system, out-of-context quote saving, XP/leveling system with leaderboards
 - **Finance** - Stock quotes via Yahoo Finance, crypto via CoinMarketCap
@@ -60,8 +60,8 @@ A Discord bot built with discord.js v14 for server games, memes, AI chat, Wordle
 - **Runtime:** Node.js
 - **Framework:** discord.js v14
 - **Database:** PostgreSQL via Sequelize ORM
-- **AI:** Google Generative AI (Gemini), OpenAI
-- **APIs:** Yahoo Finance, CoinMarketCap, Tenor, GIPHY
+- **AI:** Google Generative AI (Gemini)
+- **APIs:** Yahoo Finance, CoinMarketCap, GIPHY
 
 ## Project Structure
 
@@ -117,9 +117,8 @@ BennyBombsBot/
      "guildId": "YOUR_TEST_SERVER_ID",
      "geminiApiKey": "YOUR_GEMINI_API_KEY",
      "geminiModel": "gemini-model-name",
-     "chatGptKey": "YOUR_OPENAI_API_KEY",
+     "geminiImageModel": "gemini-image-model-name",
      "botId": "YOUR_BOT_USER_ID",
-     "tenorApiKey": "YOUR_TENOR_API_KEY",
      "GIPHYApiKey": "YOUR_GIPHY_API_KEY"
    }
    ```

@@ -25,7 +25,6 @@
     "dotenv": "^8.6.0",
     "google-auth-library": "^9.14.2",
     "node-fetch": "^2.6.12",
-    "openai": "^4.6.0",
     "pg": "^8.8.0",
     "pg-hstore": "^2.3.4",
     "sequelize": "^6.28.0",

@@ -29,6 +29,7 @@ try {
     const Nomination = require('./models/Nomination')(sequelize, Sequelize.DataTypes);
     const WordleScore = require('./models/WordleScore')(sequelize, Sequelize.DataTypes);
     const WordleReminderOptIn = require('./models/WordleReminderOptIn')(sequelize, Sequelize.DataTypes);
+    const MapTapScore = require('./models/MapTapScore')(sequelize, Sequelize.DataTypes);
 
     // Make models accessible via client
     client.models = {
@@ -40,6 +41,7 @@ try {
         Nomination,
         WordleScore,
         WordleReminderOptIn,
+        MapTapScore,
     };
     client.sequelize = sequelize;
 

@@ -1,4 +1,12 @@
-const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
+const {
+  SlashCommandBuilder,
+  EmbedBuilder,
+  PermissionFlagsBits,
+  MessageFlags,
+  StringSelectMenuBuilder,
+  ActionRowBuilder,
+  ComponentType,
+} = require('discord.js');
 const userMemory = require('../../services/userMemory');
 
 module.exports = {
@@ -33,8 +41,8 @@ module.exports = {
         .addStringOption(option =>
           option
             .setName('item')
-            .setDescription('The exact fact text or preference category name (from /memory view)')
-            .setRequired(true)
+            .setDescription('The exact fact text or preference category name (leave blank to pick from a list)')
+            .setRequired(false)
         )
         .addUserOption(option =>
           option
@@ -125,21 +133,90 @@ module.exports = {
       const userId = targetUser ? targetUser.id : interaction.user.id;
       const targetLabel = targetUser && targetUser.id !== interaction.user.id ? `${targetUser.username}'s` : 'your';
 
-      let removed;
-      if (type === 'fact') {
-        removed = userMemory.removeFact(userId, item);
-      } else {
-        removed = userMemory.removePreference(userId, item);
+      if (item) {
+        // Typed-text flow (unchanged)
+        let removed;
+        if (type === 'fact') {
+          removed = userMemory.removeFact(userId, item);
+        } else {
+          removed = userMemory.removePreference(userId, item);
+        }
+
+        if (removed) {
+          await interaction.reply({ content: `Got it — I've removed that ${type} from ${targetLabel} memory: **${item}**`, flags: MessageFlags.Ephemeral });
+        } else {
+          await interaction.reply({
+            content: `I couldn't find a ${type} matching **"${item}"** in ${targetLabel} memory. Use \`/memory view\` to see the exact text/category names.`,
+            flags: MessageFlags.Ephemeral
+          });
+        }
+        return;
       }
 
-      if (removed) {
-        await interaction.reply({ content: `Got it — I've removed that ${type} from ${targetLabel} memory: **${item}**`, flags: MessageFlags.Ephemeral });
-      } else {
-        await interaction.reply({
-          content: `I couldn't find a ${type} matching **"${item}"** in ${targetLabel} memory. Use \`/memory view\` to see the exact text/category names.`,
-          flags: MessageFlags.Ephemeral
-        });
+      // No item given — show a select menu to pick from instead of typing
+      const memory = userMemory.getUserMemory(userId);
+      const options = type === 'fact'
+        ? memory.facts.map((f, i) => ({ key: String(i), text: typeof f === 'string' ? f : f.text }))
+        : Object.entries(memory.preferences).map(([category, pref]) => ({
+            key: category,
+            text: `${category}: ${typeof pref === 'string' ? pref : pref.value}`
+          }));
+
+      if (options.length === 0) {
+        await interaction.reply({ content: `${targetLabel} memory has no ${type}s to forget.`, flags: MessageFlags.Ephemeral });
+        return;
       }
+
+      const selectMenu = new StringSelectMenuBuilder()
+        .setCustomId('memory-forget-select')
+        .setPlaceholder(`Select ${type}(s) to forget`)
+        .setMinValues(1)
+        .setMaxValues(options.length)
+        .addOptions(options.map(opt => ({
+          label: opt.text.length > 100 ? `${opt.text.slice(0, 97)}...` : opt.text,
+          value: opt.key
+        })));
+
+      const row = new ActionRowBuilder().addComponents(selectMenu);
+
+      await interaction.reply({
+        content: `Select the ${type}(s) to forget from ${targetLabel} memory:`,
+        components: [row],
+        flags: MessageFlags.Ephemeral
+      });
+
+      const message = await interaction.fetchReply();
+      const collector = message.createMessageComponentCollector({
+        componentType: ComponentType.StringSelect,
+        filter: i => i.user.id === interaction.user.id,
+        time: 60_000,
+        max: 1
+      });
+
+      collector.on('collect', async i => {
+        const removedLabels = [];
+        i.values.forEach(key => {
+          const opt = options.find(o => o.key === key);
+          if (!opt) return;
+          const removed = type === 'fact'
+            ? userMemory.removeFact(userId, opt.text)
+            : userMemory.removePreference(userId, opt.key);
+          if (removed) removedLabels.push(opt.text);
+        });
+
+        await i.update({
+          content: removedLabels.length > 0
+            ? `Got it — removed ${removedLabels.length} ${type}(s) from ${targetLabel} memory:\n${removedLabels.map(l => `• ${l}`).join('\n')}`
+            : `Couldn't remove the selected ${type}(s) — they may have already been removed.`,
+          components: []
+        });
+      });
+
+      collector.on('end', collected => {
+        if (collected.size === 0) {
+          interaction.editReply({ content: 'Selection timed out.', components: [] }).catch(() => {});
+        }
+      });
 
     } else if (sub === 'reload') {
       const isAdmin = interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild);

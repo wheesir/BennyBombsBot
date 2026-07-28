@@ -73,8 +73,11 @@ function saveMemories(memories, immediate = false) {
  * won't silently re-learn it later.
  * @param {Object} previous - In-memory memories object before the reload
  * @param {Object} fresh - Memories object just loaded from disk
+ * @returns {boolean} Whether anything was actually merged in (i.e. a write-back is needed)
  */
 function mergeForgottenFromExternalEdit(previous, fresh) {
+  let changed = false;
+
   Object.keys(previous).forEach(userId => {
     const oldMem = previous[userId];
     const newMem = fresh[userId];
@@ -86,7 +89,10 @@ function mergeForgottenFromExternalEdit(previous, fresh) {
     oldFactTexts
       .filter(t => !newFactTexts.has(t))
       .forEach(t => {
-        if (!newMem.forgottenFacts.includes(t)) newMem.forgottenFacts.push(t);
+        if (!newMem.forgottenFacts.includes(t)) {
+          newMem.forgottenFacts.push(t);
+          changed = true;
+        }
       });
 
     const oldPrefKeys = Object.keys(oldMem.preferences || {});
@@ -95,9 +101,14 @@ function mergeForgottenFromExternalEdit(previous, fresh) {
     oldPrefKeys
       .filter(k => !newPrefKeys.has(k))
       .forEach(k => {
-        if (!newMem.forgottenPreferences.includes(k)) newMem.forgottenPreferences.push(k);
+        if (!newMem.forgottenPreferences.includes(k)) {
+          newMem.forgottenPreferences.push(k);
+          changed = true;
+        }
       });
   });
+
+  return changed;
 }
 
 /**
@@ -112,13 +123,16 @@ function performSave(memories) {
     if (getFileMtimeMs() > lastKnownMtimeMs) {
       console.log('⚠️ userMemories.json was edited externally — reloading and preserving your edits');
       const fresh = loadMemories();
-      mergeForgottenFromExternalEdit(memories, fresh);
+      const changed = mergeForgottenFromExternalEdit(memories, fresh);
       Object.keys(memories).forEach(k => delete memories[k]);
       Object.assign(memories, fresh);
       lastKnownMtimeMs = getFileMtimeMs();
       pendingSave = false;
       saveTimeout = null;
-      performSave(memories); // persist the merged forgotten-lists
+      // Only write back if we actually recorded new forgotten items; otherwise
+      // the reloaded content already matches disk and a no-op write would just
+      // bump the mtime and cause this branch to re-trigger on the next poll.
+      if (changed) performSave(memories);
       return;
     }
 
@@ -157,6 +171,18 @@ function syncFromDiskIfChanged() {
   const diskMtime = getFileMtimeMs();
   if (diskMtime <= lastKnownMtimeMs) return;
 
+  const fresh = loadMemories();
+  const changed = mergeForgottenFromExternalEdit(memories, fresh);
+  Object.keys(memories).forEach(k => delete memories[k]);
+  Object.assign(memories, fresh);
+  lastKnownMtimeMs = getFileMtimeMs();
+
+  // If nothing was actually merged in, the reload was a no-op (e.g. we're
+  // seeing our own prior write, or another process's save) — skip the write-back.
+  // Writing back here when nothing changed would bump the mtime and cause this
+  // handler to re-fire on the next poll, looping forever.
+  if (!changed) return;
+
   console.log('📥 Detected manual edit to userMemories.json — syncing and remembering removed items');
 
   if (saveTimeout) {
@@ -165,11 +191,6 @@ function syncFromDiskIfChanged() {
     pendingSave = false;
   }
 
-  const fresh = loadMemories();
-  mergeForgottenFromExternalEdit(memories, fresh);
-  Object.keys(memories).forEach(k => delete memories[k]);
-  Object.assign(memories, fresh);
-  lastKnownMtimeMs = getFileMtimeMs();
   saveMemories(memories, true);
 }
 
@@ -641,7 +662,7 @@ function cleanOldMemories(userId) {
   // Age thresholds based on addedOn — facts expire by age, not by last use.
   // formatMemoryForPrompt updates lastReferenced for rotation, so using it for
   // expiry would prevent cleanup from ever running.
-  const SIXTY_DAYS = 21 * 24 * 60 * 60 * 1000;  // 21 days
+  const SIXTY_DAYS = 7 * 24 * 60 * 60 * 1000;   // 7 days
   const THIRTY_DAYS = 14 * 24 * 60 * 60 * 1000; // 14 days
 
   // Maximum item limits

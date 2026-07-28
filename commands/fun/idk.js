@@ -1,6 +1,4 @@
-const fetch = require('node-fetch');
 const { SlashCommandBuilder } = require('discord.js');
-const { tenorApiKey } = require('../../config.json');
 
 module.exports = {
 	data: new SlashCommandBuilder()
