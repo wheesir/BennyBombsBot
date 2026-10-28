@@ -8,3 +8,4 @@ images/
 bootjaf/
 logs/
 pm2-startup.bat
+package-lock.json
